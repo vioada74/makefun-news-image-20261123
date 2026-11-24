@@ -1,56 +1,60 @@
 #!/usr/bin/env python3
-"""Copy the finished front page to make.fun's output directory.
+"""Place the finished front page where make.fun will read it.
 
-The entry image is a one-page newspaper that sums up the world news
-of Monday, 23 November 2026: Nvidia brings back Jensen Huang as its
-chief executive (shares jump 31%), seven more photo stories from the
-same day, and a three-item ticker at the foot of the page. The image
-is already drawn and stored next to this file as entry.png; this
-program only moves it, byte for byte, to $MAKEFUN_OUTPUT_DIR/entry.png.
+The one-page newspaper for Monday, 23 November 2026 is already drawn
+and saved as entry.png in the same folder as this script. This program
+only copies that file, byte for byte, to $MAKEFUN_OUTPUT_DIR/entry.png.
 
-Because the copy is a plain byte copy with no clock, random input,
-or other varying data involved, running the program twice over the
-same source always writes an identical file. That is what makes the
-build reproducible.
+Copying bytes does not depend on the clock or on random data, so two
+runs over the same source always write an identical file.
 """
 
+import hashlib
 import os
 import shutil
 import sys
+from pathlib import Path
 
-SOURCE_NAME = "entry.png"
+IMAGE = "entry.png"
 
 
-def main() -> int:
-    here = os.path.dirname(os.path.abspath(__file__))
-    source = os.path.join(here, SOURCE_NAME)
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def die(message):
+    print(f"error: {message}", file=sys.stderr)
+    return 1
+
+
+def main():
+    here = Path(__file__).resolve().parent
+    source = here / IMAGE
 
     out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
     if not out_dir:
-        print("error: MAKEFUN_OUTPUT_DIR is not set", file=sys.stderr)
-        return 1
+        return die("MAKEFUN_OUTPUT_DIR is not set")
 
-    if not os.path.isfile(source):
-        print(f"error: source image not found: {source}", file=sys.stderr)
-        return 1
-    if os.path.getsize(source) == 0:
-        print(f"error: source image is empty: {source}", file=sys.stderr)
-        return 1
+    if not source.is_file():
+        return die(f"no {IMAGE} found next to this script")
+    if source.stat().st_size == 0:
+        return die(f"{IMAGE} is empty")
 
-    os.makedirs(out_dir, exist_ok=True)
-    target = os.path.join(out_dir, SOURCE_NAME)
-
+    target_dir = Path(out_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / IMAGE
     shutil.copyfile(source, target)
 
-    if os.path.getsize(target) != os.path.getsize(source):
-        print(
-            f"error: copied file size {os.path.getsize(target)} does not "
-            f"match source size {os.path.getsize(source)}",
-            file=sys.stderr,
-        )
-        return 1
+    if target.stat().st_size != source.stat().st_size:
+        return die("copy size differs from the source size")
+    if _sha256(target) != _sha256(source):
+        return die("copy contents differ from the source")
 
-    print(f"copied {source} -> {target}")
+    print(f"copied {source} to {target}")
     return 0
 
 
